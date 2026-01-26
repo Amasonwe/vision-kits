@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from utils.image import save_image, get_bounding_boxes, annotate_image
 from utils.db import save_detection, get_detection
-from router import get_model
+from router import get_model, MODEL_REGISTRY
 from response import build_response
 
 app = FastAPI(title="视觉算法合集",
@@ -53,6 +53,12 @@ async def detect(
     version: str = Form(...),
     file: UploadFile = File(...)
 ):
+        # 新增调试打印
+    print(f"📥 接口传入参数：category={category}, version={version}")
+    print(f"📋 当前 MODEL_REGISTRY 类别：{list(MODEL_REGISTRY.keys())}")
+    if category in MODEL_REGISTRY:
+        print(f"📋 {category} 支持的版本：{list(MODEL_REGISTRY[category].keys())}")
+    
     """
     识别图片中的目标对象
 
