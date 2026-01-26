@@ -2,7 +2,8 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from utils.image import save_image
+from utils.image import save_image, get_bounding_boxes, annotate_image
+from utils.db import save_detection, get_detection
 from router import get_model
 from response import build_response
 
@@ -66,7 +67,27 @@ async def detect(
     model = get_model(category, version)
     detections = model.predict(image_path)
 
-    return build_response(category, version, detections)
+    # 返回标准 bbox 列表
+    boxes = get_bounding_boxes(detections)
+
+    # 生成可通过 /static/ 访问的标注图片
+    annotated_url = annotate_image(image_path, boxes)
+
+    # 保存到数据库，返回记录 id
+    try:
+        record_id = save_detection(category, version, image_path, annotated_url, detections)
+    except Exception:
+        record_id = None
+
+    return build_response(category, version, detections, annotated_image=annotated_url, record_id=record_id)
+
+
+@app.get("/detections/{record_id}", summary="查询单条检测记录")
+async def get_detection_record(record_id: int):
+    rec = get_detection(record_id)
+    if not rec:
+        return {"error": "record not found"}
+    return rec
 
 if __name__ == "__main__":
     import uvicorn
