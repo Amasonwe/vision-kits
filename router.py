@@ -18,7 +18,7 @@ MODEL_REGISTRY = {
     }
 }
 
-_model_cache = {}
+_model_cache = {}   
 
 def get_model(category: str, version: str):
     key = f"{category}_{version}"
