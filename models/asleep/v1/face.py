@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from typing import Iterable, Union, Tuple, List, Optional
 
 # 设置环境变量以抑制 TensorFlow/absl 的冗长日志（存在时有效）
 os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
@@ -18,6 +19,7 @@ try:
     mp_facemesh = mp.solutions.face_mesh
     mp_drawing = mp.solutions.drawing_utils
     # 这个内部方法有时不存在，使用保护性获取
+    print("✅ mediapipe 导入成功！mp_facemesh：", mp_facemesh)
     denormalize_coordinates = getattr(mp_drawing, '_normalized_to_pixel_coordinates', None)
 except Exception:
     mp = None
@@ -172,92 +174,172 @@ def video_test():
     print(f"视频处理完成，已保存到：{out_path}")
 
 
-def faceCheck_getEAR(images_path):
-    # print(type(images_path))
-    """测试函数，用于验证EAR算法在眼睛打开和闭合状态下的效果"""
+def _process_image_list(images: List[np.ndarray], *, static_image_mode: bool = True,
+                        min_detection_confidence: float = 0.5,
+                        min_tracking_confidence: float = 0.5,
+                        chosen_left_eye_idxs=None,
+                        chosen_right_eye_idxs=None) -> Tuple[int, Optional[List[int]]]:
+    """Process a list of images (numpy arrays). Returns (flag, bbox).
 
-    chosen_left_eye_idxs  = [362, 385, 387, 263, 373, 380]  # 左眼周围的6个特定关键点索引
-    chosen_right_eye_idxs = [33,  160, 158, 133, 153, 144]  # 右眼周围的6个特定关键点索引
-    # 加载测试图像
-    # image_eyes_open  = cv2.imread("/data/cxc/code/车联网/data/睁眼.jpg")    # 眼睛打开的图像
-    # image_eyes_close = cv2.imread("/data/cxc/code/车联网/data/自己闭眼.jpg")  # 眼睛闭合的图像
+    flag: 1 if fatigue detected (EAR threshold count), else 0.
+    bbox: last detected face bbox or None.
+    """
+    if chosen_left_eye_idxs is None:
+        chosen_left_eye_idxs = [362, 385, 387, 263, 373, 380]
+    if chosen_right_eye_idxs is None:
+        chosen_right_eye_idxs = [33, 160, 158, 133, 153, 144]
 
-
-    # 如果 mediapipe 不可用，直接返回未检测到疲劳
     if mp_facemesh is None:
         print("Warning: mediapipe not installed; faceCheck_getEAR will return (0, None)")
         return 0, None
 
-    try:
-        # 遍历测试图像
-        count  = 0
-        for idx, image in enumerate(images_path):
+    count = 0
+    face_bbox = None
 
-            # 确保图像数据连续存储在内存中，提高处理效率
+    # Create FaceMesh once for the batch
+    with mp_facemesh.FaceMesh(static_image_mode=static_image_mode,
+                              refine_landmarks=True,
+                              max_num_faces=1,
+                              min_detection_confidence=min_detection_confidence,
+                              min_tracking_confidence=min_tracking_confidence) as face_mesh:
+        for image in images:
+            if image is None:
+                continue
             image = np.ascontiguousarray(image)
-            imgH, imgW, _ = image.shape
+            imgH, imgW = image.shape[:2]
 
-            # 创建原始图像的副本，用于绘制EAR值
-            # custom_chosen_lmk_image = image.copy()
+            # MediaPipe expects RGB
+            if image.shape[2] == 3:
+                proc_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            else:
+                proc_img = image
 
-            # 使用static_image_mode运行人脸网格检测
-            with mp_facemesh.FaceMesh(refine_landmarks=True) as face_mesh:
-                results = face_mesh.process(image).multi_face_landmarks
+            results = face_mesh.process(proc_img)
+            multi = getattr(results, 'multi_face_landmarks', None)
+            if not multi:
+                continue
 
-                # 如果检测到人脸
-                if results:
-                            for face_id, face_landmarks in enumerate(results):
-                                landmarks = face_landmarks.landmark
-                                # 计算平均眼睛纵横比
-                                EAR, lm_coords = calculate_avg_ear(
-                                        landmarks,
-                                        chosen_left_eye_idxs,
-                                        chosen_right_eye_idxs,
-                                        imgW,
-                                        imgH
-                                    )
+            for face_landmarks in multi:
+                landmarks = face_landmarks.landmark
+                EAR, lm_coords = calculate_avg_ear(landmarks,
+                                                   chosen_left_eye_idxs,
+                                                   chosen_right_eye_idxs,
+                                                   imgW, imgH)
+                if EAR < 0.2:
+                    count += 1
 
-                                if EAR < 0.2:
-                                    count += 1
+                # bbox from landmarks
+                xs = []
+                ys = []
+                for lm in landmarks:
+                    if denormalize_coordinates is None:
+                        continue
+                    coord = denormalize_coordinates(lm.x, lm.y, imgW, imgH)
+                    if coord:
+                        x, y = coord
+                        xs.append(x)
+                        ys.append(y)
+                if xs and ys:
+                    x1 = max(0, min(xs))
+                    y1 = max(0, min(ys))
+                    x2 = min(imgW, max(xs))
+                    y2 = min(imgH, max(ys))
+                    face_bbox = [int(x1), int(y1), int(x2), int(y2)]
 
-                                # 计算人脸 bbox（使用所有关键点的最小外接矩形）
-                                xs = []
-                                ys = []
-                                for lm in landmarks:
-                                    coord = denormalize_coordinates(lm.x, lm.y, imgW, imgH)
-                                    if coord:
-                                        x, y = coord
-                                        xs.append(x)
-                                        ys.append(y)
-                                if xs and ys:
-                                    x1 = max(0, min(xs))
-                                    y1 = max(0, min(ys))
-                                    x2 = min(imgW, max(xs))
-                                    y2 = min(imgH, max(ys))
-                                    face_bbox = [int(x1), int(y1), int(x2), int(y2)]
-                                else:
-                                    face_bbox = None
-                        # 在图像上绘制EAR值
-                        # cv2.putText(custom_chosen_lmk_image, 
-                        #             f"EAR: {round(EAR, 2)}", (1, 24),
-                        #             cv2.FONT_HERSHEY_COMPLEX, 
-                        #             0.9, (255, 255, 255), 2
-                        # )                
-                        # 保存结果图像
-                        # cv2.imwrite('/data/cxc/code/车联网/data/' + str(idx) + '.png', custom_chosen_lmk_image)
-                        # plot(img_dt=image.copy(),
-                        #     img_eye_lmks_chosen=custom_chosen_lmk_image,
-                        #     face_landmarks=face_landmarks,
-                        #     ts_thickness=1, 
-                        #     ts_circle_radius=3, 
-                        #     lmk_circle_radius=3
-                        # )
-        if count > 3:
-            return 1, face_bbox
-        else:
-            return 0, face_bbox
-    except Exception as e:
-        print(e)
+    return (1, face_bbox) if count > 3 else (0, face_bbox)
+
+
+def process_video(video_path: str, *, max_frames: Optional[int] = None,
+                  chosen_left_eye_idxs=None, chosen_right_eye_idxs=None) -> Tuple[int, Optional[List[int]]]:
+    """Process a video file path and return (flag, bbox)."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Warning: cannot open video: {video_path}")
+        return 0, None
+
+    def frame_generator():
+        i = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            yield frame
+            i += 1
+            if max_frames and i >= max_frames:
+                break
+        cap.release()
+
+    return _process_frames_generator(frame_generator(), static_image_mode=False,
+                                      chosen_left_eye_idxs=chosen_left_eye_idxs,
+                                      chosen_right_eye_idxs=chosen_right_eye_idxs)
+
+
+def _process_frames_generator(frames: Iterable[np.ndarray], *, static_image_mode: bool = False,
+                               chosen_left_eye_idxs=None, chosen_right_eye_idxs=None,
+                               min_detection_confidence: float = 0.5,
+                               min_tracking_confidence: float = 0.5) -> Tuple[int, Optional[List[int]]]:
+    """Process frames from an iterable/generator. Returns (flag, bbox)."""
+    # Reuse _process_image_list by collecting small batches to avoid holding all frames
+    batch = []
+    BATCH_SIZE = 16
+    for frame in frames:
+        batch.append(frame)
+        if len(batch) >= BATCH_SIZE:
+            flag, bbox = _process_image_list(batch, static_image_mode=static_image_mode,
+                                             min_detection_confidence=min_detection_confidence,
+                                             min_tracking_confidence=min_tracking_confidence,
+                                             chosen_left_eye_idxs=chosen_left_eye_idxs,
+                                             chosen_right_eye_idxs=chosen_right_eye_idxs)
+            # If detected, early return
+            if flag == 1:
+                return flag, bbox
+            batch = []
+    # process remaining
+    if batch:
+        return _process_image_list(batch, static_image_mode=static_image_mode,
+                                   min_detection_confidence=min_detection_confidence,
+                                   min_tracking_confidence=min_tracking_confidence,
+                                   chosen_left_eye_idxs=chosen_left_eye_idxs,
+                                   chosen_right_eye_idxs=chosen_right_eye_idxs)
+
+    return 0, None
+
+
+def faceCheck_getEAR(input_data: Union[str, np.ndarray, Iterable[np.ndarray]]) -> Tuple[int, Optional[List[int]]]:
+    """Flexible entry point.
+
+    Accepts:
+      - video file path (str)
+      - single image (`np.ndarray`)
+      - list of images (`Iterable` of `np.ndarray`)
+      - frame generator/iterator
+
+    Returns (flag, bbox) like before.
+    """
+    # If string, treat as video path
+    if isinstance(input_data, str):
+        return process_video(input_data)
+
+    # single image
+    if isinstance(input_data, np.ndarray):
+        return _process_image_list([input_data])
+
+    # iterable (list, generator, etc.)
+    if isinstance(input_data, Iterable):
+        # Try to detect if it's a list or similar sequence we can index
+        try:
+            # if it's a sequence like list/tuple, convert to list
+            if not hasattr(input_data, '__next__'):
+                images = list(input_data)
+                return _process_image_list(images)
+            else:
+                # it's an iterator/generator
+                return _process_frames_generator(input_data)
+        except Exception:
+            return 0, None
+
+    # unknown type
+    return 0, None
 
 
 

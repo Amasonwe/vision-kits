@@ -68,7 +68,8 @@ async def detect(
         file: 待识别的图片
     """
     image_bytes = await file.read()
-    image_path = save_image(image_bytes)
+    # preserve original filename extension so videos keep their extension
+    image_path = save_image(image_bytes, original_filename=file.filename)
 
     model = get_model(category, version)
     detections = model.predict(image_path)
