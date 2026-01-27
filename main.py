@@ -6,6 +6,19 @@ from utils.image import save_image, get_bounding_boxes, annotate_image
 from utils.db import save_detection, get_detection
 from router import get_model, MODEL_REGISTRY
 from response import build_response
+import logging
+try:
+    # 抑制 ultralytics 控制台推理进度/速度输出
+    logging.getLogger('ultralytics').setLevel(logging.ERROR)
+    logging.getLogger('ultralytics.yolo').setLevel(logging.ERROR)
+    # also try to set internal LOGGER if available
+    try:
+        from ultralytics.yolo.utils import LOGGER as _UL_LOGGER
+        _UL_LOGGER.setLevel('ERROR')
+    except Exception:
+        pass
+except Exception:
+    pass
 
 app = FastAPI(title="视觉算法合集",
     version="1.0.0",

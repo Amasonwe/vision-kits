@@ -35,6 +35,9 @@ MODEL_REGISTRY = {
     "asleep": {
         "v1": AsleepModelV1
     },
+    "basket": {
+        "v1": __import__('models.basket.v1.model_v1', fromlist=['BasketModelV1']).BasketModelV1
+    },
     "smoking": {
         "v1": smokingModelV1
     },
@@ -59,6 +62,10 @@ def get_model(category: str, version: str):
     except KeyError:
         raise ValueError("模型类别或版本不存在")
 
-    model = model_class()
+    try:
+        model = model_class()
+    except Exception as e:
+        print(f"加载模型实例失败: category={category} version={version} error={e}")
+        raise
     _model_cache[key] = model
     return model
