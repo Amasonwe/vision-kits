@@ -1,1 +1,12 @@
 # vision-kits
+helmet no
+calling no
+smoke yes
+clothes yes
+car yes
+bus yes
+ebike yes
+fire  yes
+person yes
+smoking  no
+asleep unknown

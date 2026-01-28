@@ -7,7 +7,6 @@ from typing import Iterable, Union, Tuple, List, Optional
 # 设置环境变量以抑制 TensorFlow/absl 的冗长日志（存在时有效）
 os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '2')
-# 禁用XNNPACK delegate，屏蔽 "Created TensorFlow Lite XNNPACK delegate for CPU" 日志
 os.environ['MEDIAPIPE_DISABLE_XNNPACK'] = '1'
 
 try:
@@ -53,7 +52,6 @@ def get_ear(landmarks, refer_idxs, frame_width, frame_height):
         ear: (浮点数) 眼睛纵横比
     """
     try:
-        # Compute the euclidean distance between the horizontal
         coords_points = []
         for i in refer_idxs:
             lm = landmarks[i]
@@ -61,12 +59,10 @@ def get_ear(landmarks, refer_idxs, frame_width, frame_height):
                                              frame_width, frame_height)
             coords_points.append(coord)
 
-        # Eye landmark (x, y)-coordinates
         P2_P6 = distance(coords_points[1], coords_points[5])
         P3_P5 = distance(coords_points[2], coords_points[4])
         P1_P4 = distance(coords_points[0], coords_points[3])
 
-        # Compute the eye aspect ratio
         ear = (P2_P6 + P3_P5) / (2.0 * P1_P4)
 
     except:
@@ -200,7 +196,6 @@ def _process_image_list(images: List[np.ndarray], *, static_image_mode: bool = T
     count = 0
     face_bbox = None
 
-    # Create FaceMesh once for the batch
     with mp_facemesh.FaceMesh(static_image_mode=static_image_mode,
                               refine_landmarks=True,
                               max_num_faces=1,
@@ -212,7 +207,6 @@ def _process_image_list(images: List[np.ndarray], *, static_image_mode: bool = T
             image = np.ascontiguousarray(image)
             imgH, imgW = image.shape[:2]
 
-            # MediaPipe expects RGB
             if image.shape[2] == 3:
                 proc_img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             else:
@@ -232,7 +226,6 @@ def _process_image_list(images: List[np.ndarray], *, static_image_mode: bool = T
                 if EAR < 0.2:
                     count += 1
 
-                # bbox from landmarks
                 xs = []
                 ys = []
                 for lm in landmarks:
@@ -283,7 +276,7 @@ def _process_frames_generator(frames: Iterable[np.ndarray], *, static_image_mode
                                min_detection_confidence: float = 0.5,
                                min_tracking_confidence: float = 0.5) -> Tuple[int, Optional[List[int]]]:
     """Process frames from an iterable/generator. Returns (flag, bbox)."""
-    # Reuse _process_image_list by collecting small batches to avoid holding all frames
+
     batch = []
     BATCH_SIZE = 16
     for frame in frames:
@@ -294,11 +287,10 @@ def _process_frames_generator(frames: Iterable[np.ndarray], *, static_image_mode
                                              min_tracking_confidence=min_tracking_confidence,
                                              chosen_left_eye_idxs=chosen_left_eye_idxs,
                                              chosen_right_eye_idxs=chosen_right_eye_idxs)
-            # If detected, early return
+
             if flag == 1:
                 return flag, bbox
             batch = []
-    # process remaining
     if batch:
         return _process_image_list(batch, static_image_mode=static_image_mode,
                                    min_detection_confidence=min_detection_confidence,
@@ -320,29 +312,25 @@ def faceCheck_getEAR(input_data: Union[str, np.ndarray, Iterable[np.ndarray]]) -
 
     Returns (flag, bbox) like before.
     """
-    # If string, treat as video path
+
     if isinstance(input_data, str):
         return process_video(input_data)
 
-    # single image
     if isinstance(input_data, np.ndarray):
         return _process_image_list([input_data])
 
-    # iterable (list, generator, etc.)
+
     if isinstance(input_data, Iterable):
-        # Try to detect if it's a list or similar sequence we can index
+
         try:
-            # if it's a sequence like list/tuple, convert to list
             if not hasattr(input_data, '__next__'):
                 images = list(input_data)
                 return _process_image_list(images)
             else:
-                # it's an iterator/generator
                 return _process_frames_generator(input_data)
         except Exception:
             return 0, None
 
-    # unknown type
     return 0, None
 
 

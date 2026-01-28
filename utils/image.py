@@ -9,8 +9,19 @@ TMP_DIR = "tmp"
 
 os.makedirs(TMP_DIR, exist_ok=True)
 
-def save_image(file_bytes: bytes) -> str:
-    filename = f"{uuid.uuid4().hex}.jpg"
+def save_image(file_bytes: bytes, original_filename: str = None) -> str:
+    """Save uploaded bytes to tmp directory.
+
+    If `original_filename` is provided and contains an extension, preserve it; otherwise default to .jpg.
+    Returns the saved path.
+    """
+    ext = ".jpg"
+    if original_filename:
+        _, orig_ext = os.path.splitext(original_filename)
+        if orig_ext:
+            ext = orig_ext
+
+    filename = f"{uuid.uuid4().hex}{ext}"
     path = os.path.join(TMP_DIR, filename)
     with open(path, "wb") as f:
         f.write(file_bytes)
