@@ -7,6 +7,9 @@ from typing import Iterable, Union, Tuple, List, Optional
 # 设置环境变量以抑制 TensorFlow/absl 的冗长日志（存在时有效）
 os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '2')
+# 禁用XNNPACK delegate，屏蔽 "Created TensorFlow Lite XNNPACK delegate for CPU" 日志
+os.environ['MEDIAPIPE_DISABLE_XNNPACK'] = '1'
+
 try:
     import absl.logging
     absl.logging.set_verbosity(absl.logging.ERROR)
@@ -21,7 +24,8 @@ try:
     # 这个内部方法有时不存在，使用保护性获取
     print("✅ mediapipe 导入成功！mp_facemesh：", mp_facemesh)
     denormalize_coordinates = getattr(mp_drawing, '_normalized_to_pixel_coordinates', None)
-except Exception:
+except Exception as e:
+    print(f"❌ mediapipe 导入失败（原因：{e}）")
     mp = None
     mp_facemesh = None
     mp_drawing = None
@@ -340,7 +344,6 @@ def faceCheck_getEAR(input_data: Union[str, np.ndarray, Iterable[np.ndarray]]) -
 
     # unknown type
     return 0, None
-
 
 
 if __name__ == "__main__":
