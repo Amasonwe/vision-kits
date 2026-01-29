@@ -42,3 +42,7 @@ pip-delete-this-directory.txt
 
 .idea
 .venv
+
+static/
+weights/
+tmp/
